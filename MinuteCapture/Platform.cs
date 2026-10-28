@@ -4,17 +4,18 @@ using Microsoft.Win32;
 
 namespace MinuteCapture;
 
-internal static class Startup
+internal interface IStartupRegistration { bool Enabled { get; } void Set(bool enabled); }
+internal sealed class Startup : IStartupRegistration
 {
     private const string Key = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    internal static bool Enabled => string.Equals(Read(), Command, StringComparison.OrdinalIgnoreCase);
+    public bool Enabled => string.Equals(Read(), Command, StringComparison.OrdinalIgnoreCase);
     private static string Command => $"\"{Environment.ProcessPath}\" --startup";
     private static string? Read()
     {
         using var key = Registry.CurrentUser.OpenSubKey(Key);
         return key?.GetValue("MinuteCapture") as string;
     }
-    internal static void Set(bool enabled)
+    public void Set(bool enabled)
     {
         using var key = Registry.CurrentUser.CreateSubKey(Key);
         if (enabled) key.SetValue("MinuteCapture", Command);
@@ -31,7 +32,8 @@ internal static class Desktop
     [DllImport("wtsapi32.dll")] private static extern void WTSFreeMemory(IntPtr buffer);
     internal static bool CanCapture()
     {
-        if (!WTSQuerySessionInformation(IntPtr.Zero, Process.GetCurrentProcess().SessionId, 8, out var buffer, out var bytes)) return false;
+        using var process = Process.GetCurrentProcess();
+        if (!WTSQuerySessionInformation(IntPtr.Zero, process.SessionId, 8, out var buffer, out var bytes)) return false;
         try { if (bytes < 4 || Marshal.ReadInt32(buffer) != 0) return false; }
         finally { WTSFreeMemory(buffer); }
         var desktop = OpenInputDesktop(0, false, 0x0100);

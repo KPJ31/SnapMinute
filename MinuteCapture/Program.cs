@@ -11,8 +11,10 @@ internal static class Program
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        var identity = WindowsIdentity.GetCurrent().User!.Value;
-        var name = $@"Local\MinuteCapture-{identity}-{Process.GetCurrentProcess().SessionId}";
+        using var windowsIdentity = WindowsIdentity.GetCurrent();
+        using var process = Process.GetCurrentProcess();
+        var identity = windowsIdentity.User!.Value;
+        var name = $@"Local\MinuteCapture-{identity}-{process.SessionId}";
         using var mutex = new Mutex(true, name, out var first);
         using var show = new EventWaitHandle(false, EventResetMode.AutoReset, name + "-Show");
         if (!first) { show.Set(); return; }

@@ -8,6 +8,7 @@ namespace MinuteCapture;
 internal sealed class CaptureContext : ApplicationContext
 {
     private readonly string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MinuteCapture");
+    private readonly IStartupRegistration startupRegistration;
     private readonly SettingsStore store;
     private readonly ErrorLog log;
     private Settings settings;
@@ -21,14 +22,16 @@ internal sealed class CaptureContext : ApplicationContext
     private readonly CaptureSchedule schedule = new(TimeSpan.FromSeconds(60));
     private readonly EventWaitHandle show;
     private bool busy, exiting, sessionBlocked, suspended;
-    private Task? capture;
+    private Task? capture; private Task? saving; private CancellationTokenSource? captureCancellation;
     private string? error;
     private DateTime? last;
-    private bool configured;
+    private bool configured, desktopUnavailable;
 
-    internal CaptureContext(EventWaitHandle show, bool quiet)
+    internal CaptureContext(EventWaitHandle show, bool quiet, string? dataDirectory = null, IStartupRegistration? startup = null)
     {
         this.show = show;
+        data = dataDirectory ?? data;
+        startupRegistration = startup ?? new Startup();
         store = new(data);
         log = new(data);
         settings = store.Load(out error);
@@ -38,10 +41,11 @@ internal sealed class CaptureContext : ApplicationContext
         {
             try
             {
-                settings = settings with { StartAtSignIn = Startup.Enabled };
+                settings = settings with { StartAtSignIn = startupRegistration.Enabled };
                 store.Save(settings);
             }
-            catch (Exception ex) { Fail(ex); }
+            catch (OperationCanceledException) { }
+        catch (Exception ex) { Fail(ex); }
         }
         icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? (Icon)SystemIcons.Application.Clone();
         window = new SettingsForm(this, icon);
@@ -69,10 +73,24 @@ internal sealed class CaptureContext : ApplicationContext
     }
 
     internal Settings Current => settings;
-    internal string SuggestedFolder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "MinuteCapture");
+    internal string? LastError => error;
+    internal SettingsForm Window => window;
     internal void OpenSettings()
     {
         if (exiting) return;
+        if (configured)
+        {
+            try
+            {
+                var enabled = startupRegistration.Enabled;
+                if (enabled != settings.StartAtSignIn)
+                {
+                    settings = settings with { StartAtSignIn = enabled };
+                    store.Save(settings);
+                }
+            }
+            catch (Exception ex) { Fail(ex); }
+        }
         window.LoadSettings(settings, configured);
         window.Show();
         window.WindowState = FormWindowState.Normal;
@@ -82,13 +100,14 @@ internal sealed class CaptureContext : ApplicationContext
     private void Refresh()
     {
         var state = !configured ? "Setup required" : !settings.CaptureEnabled ? "Paused" :
-            suspended || sessionBlocked ? "Waiting for active session" : "Running";
+            suspended || sessionBlocked || desktopUnavailable ? "Waiting for active session" : "Running";
         if (error is not null) state += " — error";
-        pause.Text = settings.CaptureEnabled ? "Pause" : "Resume";
-        window.UpdateStatus(state, last, error, settings.CaptureEnabled, busy);
+        pause.Text = configured && settings.CaptureEnabled ? "Pause" : "Resume";
+        window.UpdateStatus(state, last, error, configured && settings.CaptureEnabled, busy);
         tray.Text = ("MinuteCapture — " + state)[..Math.Min(63, ("MinuteCapture — " + state).Length)];
     }
-    internal async Task Save(string folder, bool startup)
+    internal Task Save(string folder, bool startup) => saving = SaveCore(folder, startup);
+    private async Task SaveCore(string folder, bool startup)
     {
         if (exiting) return;
         window.SetSaving(true);
@@ -96,10 +115,10 @@ internal sealed class CaptureContext : ApplicationContext
         {
             var valid = await Task.Run(() => SettingsStore.ValidateFolder(folder));
             var candidate = settings with { Folder = valid, StartAtSignIn = startup };
-            var previous = Startup.Enabled;
-            Startup.Set(startup);
+            var previous = startupRegistration.Enabled;
+            startupRegistration.Set(startup);
             try { store.Save(candidate); }
-            catch { Startup.Set(previous); throw; }
+            catch { startupRegistration.Set(previous); throw; }
             var wasConfigured = configured;
             settings = candidate;
             configured = true;
@@ -107,10 +126,11 @@ internal sealed class CaptureContext : ApplicationContext
             window.LoadSettings(settings, true);
             if (!wasConfigured)
             {
-                schedule.SetEnabled(settings.CaptureEnabled, clock.Elapsed);
+                if (!settings.CaptureEnabled) captureCancellation?.Cancel(); schedule.SetEnabled(settings.CaptureEnabled, clock.Elapsed);
                 if (schedule.TakeDue(clock.Elapsed)) await BeginCapture();
             }
         }
+        catch (OperationCanceledException) { }
         catch (Exception ex) { Fail(ex); }
         finally { window.SetSaving(false); Refresh(); }
     }
@@ -120,9 +140,16 @@ internal sealed class CaptureContext : ApplicationContext
         try
         {
             var candidate = settings with { CaptureEnabled = !settings.CaptureEnabled };
+            // Privacy takes precedence over persistence: Pause must work even on a full disk.
+            if (!candidate.CaptureEnabled)
+            {
+                settings = candidate;
+                schedule.SetEnabled(false, clock.Elapsed);
+                captureCancellation?.Cancel();
+            }
             store.Save(candidate);
             settings = candidate;
-            schedule.SetEnabled(settings.CaptureEnabled, clock.Elapsed);
+            if (!settings.CaptureEnabled) captureCancellation?.Cancel(); schedule.SetEnabled(settings.CaptureEnabled, clock.Elapsed);
             error = null;
             Refresh();
             if (schedule.TakeDue(clock.Elapsed)) await BeginCapture();
@@ -144,18 +171,20 @@ internal sealed class CaptureContext : ApplicationContext
         if (busy || exiting || !configured || !settings.CaptureEnabled || sessionBlocked || suspended) return;
         busy = true;
         Refresh();
-        var folder = settings.Folder;
+        var folder = settings.Folder; captureCancellation = new CancellationTokenSource(); var token = captureCancellation.Token;
         try
         {
             capture = Task.Run(() =>
             {
-                if (!Desktop.CanCapture()) return;
+                if (token.IsCancellationRequested) return;
+                desktopUnavailable = !Desktop.CanCapture(); if (desktopUnavailable) return;
                 var bounds = Screen.PrimaryScreen?.Bounds ?? throw new IOException("No primary display is available.");
                 using var bitmap = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format24bppRgb);
                 using (var graphics = Graphics.FromImage(bitmap))
                     graphics.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size, CopyPixelOperation.SourceCopy);
                 // Recheck session state before writing an image captured during a lock transition.
-                if (!Desktop.CanCapture()) return;
+                if (token.IsCancellationRequested) return;
+                desktopUnavailable = !Desktop.CanCapture(); if (desktopUnavailable) return;
                 var final = Path.Combine(folder, CaptureNames.Create(DateTime.Now));
                 var temp = final + ".tmp";
                 try
@@ -165,7 +194,7 @@ internal sealed class CaptureContext : ApplicationContext
                         bitmap.Save(stream, ImageFormat.Jpeg);
                         stream.Flush(true);
                     }
-                    File.Move(temp, final);
+                    token.ThrowIfCancellationRequested(); File.Move(temp, final);
                     last = DateTime.Now;
                 }
                 finally { if (File.Exists(temp)) File.Delete(temp); }
@@ -173,8 +202,9 @@ internal sealed class CaptureContext : ApplicationContext
             await capture;
             error = null;
         }
+        catch (OperationCanceledException) { }
         catch (Exception ex) { Fail(ex); }
-        finally { busy = false; if (!exiting) Refresh(); }
+        finally { captureCancellation.Dispose(); captureCancellation = null; busy = false; if (!exiting) Refresh(); }
     }
     internal void OpenFolder()
     {
@@ -196,7 +226,7 @@ internal sealed class CaptureContext : ApplicationContext
         {
             case SessionSwitchReason.SessionLock:
             case SessionSwitchReason.RemoteDisconnect:
-            case SessionSwitchReason.ConsoleDisconnect: sessionBlocked = true; break;
+            case SessionSwitchReason.ConsoleDisconnect: sessionBlocked = true; captureCancellation?.Cancel(); break;
             case SessionSwitchReason.SessionUnlock:
             case SessionSwitchReason.RemoteConnect:
             case SessionSwitchReason.ConsoleConnect: sessionBlocked = false; schedule.Defer(clock.Elapsed); break;
@@ -205,18 +235,18 @@ internal sealed class CaptureContext : ApplicationContext
     });
     private void PowerChanged(object sender, PowerModeChangedEventArgs e) => Dispatch(() =>
     {
-        if (e.Mode == PowerModes.Suspend) suspended = true;
+        if (e.Mode == PowerModes.Suspend) { suspended = true; captureCancellation?.Cancel(); }
         if (e.Mode == PowerModes.Resume) { suspended = false; schedule.Defer(clock.Elapsed); }
         Refresh();
     });
-    private async Task Exit()
+    internal async Task Exit()
     {
         if (exiting) return;
         exiting = true;
-        timer.Stop();
+        timer.Stop(); captureCancellation?.Cancel();
         tray.Visible = false;
         window.Enabled = false;
-        if (capture is not null) await capture.ContinueWith(_ => { });
+        if (saving is not null) await saving.ContinueWith(_ => { }); if (capture is not null) await capture.ContinueWith(_ => { });
         window.AllowClose = true;
         window.Close();
         ExitThread();

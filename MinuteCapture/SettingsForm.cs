@@ -10,7 +10,7 @@ internal sealed class SettingsForm : Form
     private readonly Button save = new() { Text = "Save Settings", AutoSize = true };
     private readonly Button toggle = new() { AutoSize = true };
     private readonly Button now = new() { Text = "Capture Now", AutoSize = true };
-    internal bool AllowClose { get; set; }
+    internal bool AllowClose;
     internal SettingsForm(CaptureContext app, Icon icon)
     {
         Text = "MinuteCapture";
@@ -48,7 +48,7 @@ internal sealed class SettingsForm : Form
         root.Controls.Add(info);
         root.Controls.Add(new Label { Text = "Closing this window keeps MinuteCapture in the system tray.\nUse the tray menu → Exit to stop the application.", AutoSize = true });
         Controls.Add(root);
-        FormClosing += (_, e) => { if (!AllowClose && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); } };
+        FormClosing += (_, e) => { if (!AllowClose && e.CloseReason is CloseReason.UserClosing or CloseReason.TaskManagerClosing) { e.Cancel = true; Hide(); } };
     }
     internal void LoadSettings(Core.Settings settings, bool configured)
     {
