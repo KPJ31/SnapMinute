@@ -1,0 +1,5 @@
+<Solution>
+    <Project Path="MinuteCapture.Core/MinuteCapture.Core.csproj" />
+    <Project Path="MinuteCapture/MinuteCapture.csproj" />
+    <Project Path="MinuteCapture.Tests/MinuteCapture.Tests.csproj" />
+</Solution>
