@@ -14,7 +14,7 @@ internal sealed class CaptureContext : ApplicationContext
     private Settings settings;
     private readonly SettingsForm window;
     private readonly NotifyIcon tray;
-    private readonly Icon icon;
+    private readonly BrandingResources branding;
     private readonly ContextMenuStrip menu = new();
     private readonly ToolStripMenuItem pause;
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 500 };
@@ -47,8 +47,8 @@ internal sealed class CaptureContext : ApplicationContext
             catch (OperationCanceledException) { }
         catch (Exception ex) { Fail(ex); }
         }
-        icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? (Icon)SystemIcons.Application.Clone();
-        window = new SettingsForm(this, icon);
+        branding = new BrandingResources();
+        window = new SettingsForm(this, branding);
         _ = window.Handle; // Stable UI dispatch handle even when started quietly.
         menu.Items.Add("Open Settings", null, (_, _) => OpenSettings());
         menu.Items.Add("Open Screenshot Folder", null, (_, _) => OpenFolder());
@@ -57,7 +57,8 @@ internal sealed class CaptureContext : ApplicationContext
         menu.Items.Add(pause);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, async (_, _) => await Exit());
-        tray = new NotifyIcon { Icon = icon, Text = "MinuteCapture", ContextMenuStrip = menu, Visible = true };
+        tray = new NotifyIcon { Icon = branding.GetIconForDpi(window.DeviceDpi, 16), Text = "MinuteCapture", ContextMenuStrip = menu, Visible = true };
+        window.DpiChanged += (_, e) => tray.Icon = branding.GetIconForDpi(e.DeviceDpiNew, 16);
         tray.DoubleClick += (_, _) => OpenSettings();
         SystemEvents.SessionSwitch += SessionSwitch;
         SystemEvents.PowerModeChanged += PowerChanged;
@@ -262,7 +263,7 @@ internal sealed class CaptureContext : ApplicationContext
             tray.Dispose();
             menu.Dispose();
             window.Dispose();
-            icon.Dispose();
+            branding.Dispose();
         }
         base.Dispose(disposing);
     }

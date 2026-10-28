@@ -97,3 +97,6 @@ WindowsTests uses isolated temporary settings and screenshots. The external smok
 If saving settings fails when you click Pause, capture still pauses for the current process. The error remains visible and the prior on-disk preference may still be enabled; fix the storage issue and save before restarting.
 
 Built artifacts and the actual/manual test distinction are recorded in [VALIDATION.md](VALIDATION.md). SHA-256 checksums are in artifacts/SHA256SUMS.txt. Inno Setup is a separate build-time tool; use it under its applicable license.
+## Branding assets
+
+The supplied SnapMinute logo and application icon are embedded in the application. The settings header uses a proportional Zoom image; the executable, title bar, taskbar, tray, installer, and shortcuts use the multi-resolution icon. Existing MinuteCapture application/settings/installer identities are retained. See [BRANDING.md](BRANDING.md) for files, regeneration commands, visual verification, and remaining DPI/theme checks.

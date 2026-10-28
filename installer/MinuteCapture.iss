@@ -14,7 +14,7 @@ DefaultGroupName=MinuteCapture
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\MinuteCapture.exe
-SetupIconFile=..\MinuteCapture\Assets\MinuteCapture.ico
+SetupIconFile=..\MinuteCapture\Assets\Branding\SnapMinute.ico
 OutputDir=..\artifacts\installer\{#MyRuntime}
 OutputBaseFilename=MinuteCapture-Setup
 Compression=lzma2
@@ -32,8 +32,8 @@ ArchitecturesInstallIn64BitMode=x64compatible
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 [Icons]
-Name: "{group}\MinuteCapture"; Filename: "{app}\MinuteCapture.exe"
-Name: "{group}\Uninstall MinuteCapture"; Filename: "{uninstallexe}"
+Name: "{group}\MinuteCapture"; Filename: "{app}\MinuteCapture.exe"; IconFilename: "{app}\MinuteCapture.exe"; IconIndex: 0
+Name: "{group}\Uninstall MinuteCapture"; Filename: "{uninstallexe}"; IconFilename: "{app}\MinuteCapture.exe"; IconIndex: 0
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "MinuteCapture"; Flags: uninsdeletevalue
 [Run]

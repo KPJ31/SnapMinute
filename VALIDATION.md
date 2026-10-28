@@ -44,3 +44,5 @@ These checks were **not** performed and are not implied by the automated results
 10. Test an installer launched interactively under a standard user and check Windows SmartScreen behavior. Both deliverables remain unsigned.
 
 Screenshots, settings, and startup were not left enabled for the user by these tests. Inno Setup's compiler was installed in tools/InnoSetup to build the installer; it is a build-time tool and is not needed on the destination computer.
+
+Branding update: see [BRANDING.md](BRANDING.md) for the current embedded-artwork, shell-icon, build, and installer checks. The earlier behavioral/manual-check record above remains applicable.

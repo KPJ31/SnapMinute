@@ -10,17 +10,35 @@ internal sealed class SettingsForm : Form
     private readonly Button save = new() { Text = "Save Settings", AutoSize = true };
     private readonly Button toggle = new() { AutoSize = true };
     private readonly Button now = new() { Text = "Capture Now", AutoSize = true };
+    private readonly BrandingResources branding;
     internal bool AllowClose;
-    internal SettingsForm(CaptureContext app, Icon icon)
+    internal SettingsForm(CaptureContext app, BrandingResources branding)
     {
         Text = "MinuteCapture";
-        Icon = icon;
+        this.branding = branding;
+        Icon = branding.GetIconForDpi(DeviceDpi, 32);
+        ShowIcon = true;
+        ShowInTaskbar = true;
         Font = new Font("Segoe UI", 10);
+        AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(610, 350);
-        MinimumSize = new Size(570, 390);
+        ClientSize = new Size(610, 500);
+        MinimumSize = new Size(570, 540);
         StartPosition = FormStartPosition.CenterScreen;
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(20), ColumnCount = 1, RowCount = 8 };
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(20), ColumnCount = 1, RowCount = 9, AutoScroll = true };
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var header = new Panel
+        {
+            Dock = DockStyle.Top, Height = 128, Padding = new Padding(10),
+            Margin = new Padding(0, 0, 0, 12), BackColor = Color.White
+        };
+        header.Controls.Add(new PictureBox
+        {
+            Name = "BrandLogo", AccessibleName = "SnapMinute logo",
+            Dock = DockStyle.Fill, Image = branding.Logo, SizeMode = PictureBoxSizeMode.Zoom,
+            BackColor = Color.Transparent, TabStop = false
+        });
+        root.Controls.Add(header);
         root.Controls.Add(new Label { Text = "Capture your primary screen every 60 seconds", AutoSize = true, Font = new Font(Font, FontStyle.Bold) });
         root.Controls.Add(new Label { Text = "Choose a folder, then save to begin. Screenshots stay on this computer.", AutoSize = true });
         var row = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 2, AutoSize = true };
@@ -50,6 +68,12 @@ internal sealed class SettingsForm : Form
         Controls.Add(root);
         FormClosing += (_, e) => { if (!AllowClose && e.CloseReason is CloseReason.UserClosing or CloseReason.TaskManagerClosing) { e.Cancel = true; Hide(); } };
     }
+    protected override void OnDpiChanged(DpiChangedEventArgs e)
+    {
+        Icon = branding.GetIconForDpi(e.DeviceDpiNew, 32);
+        base.OnDpiChanged(e);
+    }
+
     internal void LoadSettings(Core.Settings settings, bool configured)
     {
         folder.Text = configured ? settings.Folder : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "MinuteCapture");
